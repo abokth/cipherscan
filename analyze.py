@@ -312,6 +312,12 @@ def evaluate_all(results):
     return status
 
 def process_results(data, level=None, do_json=False, do_nagios=False):
+    def print_result(s):
+        if do_nagios:
+            #Python 3: print(s, end=" ")
+            sys.stdout.write("%s " % (s))
+        else:
+            print(s)
     logging.debug('processing results on %s' % data)
     exit_status = 0
     results = dict()
@@ -344,12 +350,12 @@ def process_results(data, level=None, do_json=False, do_nagios=False):
                     json_output['operator'] = operator
             else:
                 measured_lvl = evaluate_all(results)
-                print(results['target'] + " has " + measured_lvl + " ssl/tls")
+                print_result(results['target'] + " has " + measured_lvl + " ssl/tls")
                 if level != 'none':
                     if level in measured_lvl:
-                        print("and complies with the '" + level + "' level")
+                        print_result("and complies with the '" + level + "' level")
                     else:
-                        print("and DOES NOT comply with the '" + level + "' level")
+                        print_result("and DOES NOT comply with the '" + level + "' level")
     except TypeError as e:
         print("Error processing data: " + str(e))
         return False
@@ -360,26 +366,29 @@ def process_results(data, level=None, do_json=False, do_nagios=False):
         return True
 
     if len(failures['fubar']) > 0:
-        print("\nThings that are bad:")
+        print_result("")
+        print_result("Things that are bad:")
         for failure in failures['fubar']:
-            print("* " + failure)
+            print_result("* " + failure)
         if do_nagios:
             exit_status = 2
 
     # print failures
     if level != 'none':
         if len(failures[level]) > 0:
-            print("\nChanges needed to match the " + level + " level:")
+            print_result("")
+            print_result("Changes needed to match the " + level + " level:")
             for failure in failures[level]:
-                print("* " + failure)
+                print_result("* " + failure)
             if do_nagios and exit_status < 2:
                 exit_status = 1
     else:
         for lvl in ['old', 'intermediate', 'modern']:
            if len(failures[lvl]) > 0:
-                print("\nChanges needed to match the " + lvl + " level:")
+                print_result("")
+                print_result("Changes needed to match the " + lvl + " level:")
                 for failure in failures[lvl]:
-                    print("* " + failure)
+                    print_result("* " + failure)
                 if do_nagios and exit_status < 2:
                     exit_status = 1
     return exit_status
