@@ -239,6 +239,7 @@ Use one of the options below:
                     (req. OpenSSL 1.0.2)
 --[no-]tolerance    test TLS tolerance
 --no-sni            don't use Server Name Indication
+--ipaddr            connect via a specific IP address
 --colors            force use of colors (autodetect by default)
 --no-colors         don't use terminal colors
 -v | --verbose      Increase verbosity.
@@ -1928,6 +1929,10 @@ do
             SNI="False"
             shift 1
             ;;
+        --ipaddr)
+            IPADDR="$2"
+            shift 2
+            ;;
         --) # End of all options
             shift
             break
@@ -2013,17 +2018,25 @@ if [[ $TARGET =~ :.*[^0-9] ]]; then
     echo "Final argument is not a valid HOST[:PORT]" >&2
     exit 1
 fi
+if [[ -n "${IPADDR/[0-9]*.[0-9]*.[0-9]*.[0-9]*}" ]]; then
+    # IPv6
+    IPADDR="[$IPADDR]"
+fi
 if ! [[ $TARGET =~ : ]]; then
     sni_target=$TARGET
     TARGET="${TARGET}:443"
+    if [[ -n "$IPADDR" ]]; then
+	IPTARGET="$IPADDR:443"
+    fi
 else
     # strip the port for the sni_target
     if [[ "$TARGET" =~ (.*):([0-9]{1,5}) ]]; then
         sni_target="${BASH_REMATCH[1]}"
     fi
+    if [[ -n "$IPADDR" ]]; then
+	IPTARGET="$IPADDR:${TARGET#*:}"
+    fi
 fi
-
-debug "target: $TARGET"
 
 # test our openssl is usable
 if [[ ! -x $OPENSSLBIN ]]; then
@@ -2080,6 +2093,12 @@ if [[ $SNI == "True"  && ! $SCLIENTARGS =~ servername ]]; then
     fi
 fi
 debug "sclientargs: $SCLIENTARGS"
+
+if [[ -n "$IPTARGET" ]]; then
+    TARGET="$IPTARGET"
+fi
+
+debug "target: $TARGET"
 
 
 cipherspref=()

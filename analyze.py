@@ -421,6 +421,8 @@ def main():
         help='target configuration level [old, intermediate, modern]')
     parser.add_argument('-t', dest='target',
         help='analyze a <target>, invokes cipherscan')
+    parser.add_argument('-I', dest='ipaddr',
+        help='connect to a target via a specific address, used with -t')
     parser.add_argument('-o', dest='openssl',
         help='path to openssl binary, if you don\'t like the default')
     parser.add_argument('-j', dest='json', action='store_true',
@@ -451,9 +453,15 @@ def main():
         logging.debug('Invoking cipherscan with target: ' + args.target)
         data=''
         if args.openssl:
-            data = subprocess.check_output([mypath + '/cipherscan', '-o', args.openssl, '-j', args.target])
+            if args.ipaddr:
+                data = subprocess.check_output([mypath + '/cipherscan', '-o', args.openssl, '-j', '--ipaddr', args.ipaddr, args.target])
+            else:
+                data = subprocess.check_output([mypath + '/cipherscan', '-o', args.openssl, '-j', args.target])
         else:
-            data = subprocess.check_output([mypath + '/cipherscan', '-j', args.target])
+            if args.ipaddr:
+                data = subprocess.check_output([mypath + '/cipherscan', '-j', '--ipaddr', args.ipaddr, args.target])
+            else:
+                data = subprocess.check_output([mypath + '/cipherscan', '-j', args.target])
         data = str_compat(data)
         exit_status=process_results(str(data), args.level, args.json, args.nagios)
     else:
