@@ -180,7 +180,7 @@ def is_intermediate(results):
             logging.debug(conn['sigalg'][0] + ' is a not an intermediate signature')
             has_sigalg = False
         if conn['pfs'] != 'None':
-            if not has_good_pfs(conn['pfs'], inter["dh_param_size"], inter["ecdh_param_size"], True):
+            if not has_good_pfs(conn['pfs'], inter["dh_param_size"], inter["ecdh_param_size"]):
                 logging.debug(conn['pfs']+ ' is not a good PFS parameter for the intermediate configuration')
                 has_pfs = False
         if conn['ocsp_stapling'] == 'False':
@@ -235,7 +235,7 @@ def is_modern(results):
             logging.debug(conn['sigalg'][0] + ' is a not an modern signature')
             has_sigalg = False
         if conn['pfs'] != 'None':
-            if not has_good_pfs(conn['pfs'], modern["dh_param_size"], modern["ecdh_param_size"], True):
+            if not has_good_pfs(conn['pfs'], modern["dh_param_size"], modern["ecdh_param_size"]):
                 logging.debug(conn['pfs']+ ' is not a good PFS parameter for the modern configuration')
                 ismodern = False
                 has_pfs = False
