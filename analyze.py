@@ -356,6 +356,8 @@ def process_results(data, level=None, do_json=False, do_nagios=False):
                         print_result("and complies with the '" + level + "' level")
                     else:
                         print_result("and DOES NOT comply with the '" + level + "' level")
+                        if do_nagios:
+                            exit_status = 2
     except TypeError as e:
         print("Error processing data: " + str(e))
         return False
