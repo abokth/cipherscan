@@ -68,6 +68,19 @@ client_ciphers['FF 35']=[
         'RC4-SHA',
         'RC4-MD5']
 
+client_ciphers['FF 44']=[
+        'ECDHE-ECDSA-AES128-GCM-SHA256',
+        'ECDHE-RSA-AES128-GCM-SHA256',
+        'ECDHE-ECDSA-AES256-SHA',
+        'ECDHE-ECDSA-AES128-SHA',
+        'ECDHE-RSA-AES128-SHA',
+        'ECDHE-RSA-AES256-SHA',
+        'DHE-RSA-AES128-SHA',
+        'DHE-RSA-AES256-SHA',
+        'AES128-SHA',
+        'AES256-SHA',
+        'DES-CBC3-SHA']
+
 report_untrused=False
 
 cipherstats = defaultdict(int)
@@ -76,11 +89,15 @@ cipherstats = defaultdict(int)
 # ciphers selected by them, unsupported, etc.
 client_RC4_Only_cipherstats={}
 client_RC4_preferred_cipherstats={}
+client_3DES_Only_cipherstats={}
+client_3DES_preferred_cipherstats={}
 client_incompatible_cipherstats={}
 client_selected_cipherstats={}
 for client_name in client_ciphers:
     client_RC4_Only_cipherstats[client_name] = defaultdict(int)
     client_RC4_preferred_cipherstats[client_name] = defaultdict(int)
+    client_3DES_Only_cipherstats[client_name] = defaultdict(int)
+    client_3DES_preferred_cipherstats[client_name] = defaultdict(int)
     client_incompatible_cipherstats[client_name] = defaultdict(int)
     client_selected_cipherstats[client_name] = defaultdict(int)
 
@@ -94,8 +111,11 @@ tickethint = defaultdict(int)
 eccfallback = defaultdict(int)
 eccordering = defaultdict(int)
 ecccurve = defaultdict(int)
+npn = defaultdict(int)
 ocspstaple = defaultdict(int)
 fallbacks = defaultdict(int)
+intolerancies = defaultdict(int)
+impl_families = defaultdict(int)
 # array with indexes of fallback names for the matrix report
 fallback_ids = defaultdict(int)
 i=0
@@ -157,7 +177,10 @@ for r,d,flist in os.walk(path):
         tempeccfallback = "unknown"
         tempeccordering = "unknown"
         tempecccurve = {}
+        tempnpn = {}
         tempfallbacks = {}
+        tempintolerancies = {}
+        tempimpl_families = {}
         """ supported ciphers by the server under scan """
         tempcipherstats = {}
         temppfssigalgordering = {}
@@ -176,16 +199,20 @@ for r,d,flist in os.walk(path):
         GOST89_cipher = False
         """ variables to support handshake simulation for different clients """
         client_RC4_Only={}
+        client_3DES_Only={}
         client_compat={}
         temp_client_incompat={}
         client_RC4_Pref={}
+        client_3DES_Pref={}
         client_selected={}
         for client_name in client_ciphers:
             # the following depends on client_compat, so by default it can be True
             client_RC4_Only[client_name]=True
+            client_3DES_Only[client_name]=True
             client_compat[client_name]=False
             temp_client_incompat[client_name]={}
             client_RC4_Pref[client_name]=None
+            client_3DES_Pref[client_name]=None
             client_selected[client_name]=None
 
         """ server side list of supported ciphers """
@@ -328,6 +355,30 @@ for r,d,flist in os.walk(path):
                 except KeyError:
                     pass
 
+            if 'intolerancies' in results:
+                intoler = results['intolerancies']
+                for name, val in intoler.items():
+                    if val is True:
+                        tempintolerancies[name] = 1
+                intol = [x.replace(' ', '_')
+                              for x in tempintolerancies.keys()]
+                all_above_tls_1_2 = ('TLS_1.3', 'TLS_1.4', 'SSL_3.254',
+                                     'SSL_4.0', 'SSL_4.3', 'SSL_255.255')
+                if all(i in intol for i in all_above_tls_1_2):
+                    for i in all_above_tls_1_2:
+                        intol.remove(i)
+                    intol.append('TLS_1.3+')
+                all_above_ssl_4_0 = ('SSL_4.3', 'SSL_4.0', 'SSL_255.255')
+                if all(i in intol for i in all_above_ssl_4_0):
+                    for i in all_above_ssl_4_0:
+                        intol.remove(i)
+                    intol.append("SSL_4.0+")
+                if intol:
+                    intol.sort(reverse=True)
+                    tempimpl_families[" ".join(intol)] = 1
+            else:
+                tempintolerancies['x:missing information'] = 1
+
             """ get some extra data about server """
             if 'renegotiation' in results:
                 temprenegotiation[results['renegotiation']] = 1
@@ -356,6 +407,8 @@ for r,d,flist in os.walk(path):
                         client_compat[client_name]=True
                         if not 'RC4' in entry['cipher']:
                             client_RC4_Only[client_name] = False
+                        if not 'CBC3' in entry['cipher']:
+                            client_3DES_Only[client_name] = False
                     else:
                         temp_client_incompat[client_name][entry['cipher']] = 1
 
@@ -477,6 +530,13 @@ for r,d,flist in os.walk(path):
                     elif protocol == 'TLSv1.2':
                         TLS1_2 = True
 
+                # save NPN protocols supported
+                if 'npn' in entry:
+                    for proto in entry['npn']:
+                        tempnpn[proto] = 1
+                    if len(entry['npn']) == 1:
+                        tempnpn[proto + ' Only'] = 1
+
                 """ save ECC curves stats """
                 if 'curves_ordering' in entry:
                     tempeccordering = entry['curves_ordering']
@@ -534,6 +594,8 @@ for r,d,flist in os.walk(path):
                             client_selected[client_name] = cipher
                             if 'RC4' in cipher:
                                 client_RC4_Pref[client_name] = True
+                            if 'CBC3' in cipher:
+                                client_3DES_Pref[client_name] = True
                             break
                 else:
                     for cipher in list_of_ciphers:
@@ -541,10 +603,18 @@ for r,d,flist in os.walk(path):
                             client_selected[client_name] = cipher
                             if 'RC4' in cipher:
                                 client_RC4_Pref[client_name] = True
+                            if 'CBC3' in cipher:
+                                client_3DES_Pref[client_name] = True
                             break
 
         for s in tempfallbacks:
             fallbacks[s] += 1
+
+        for s in tempintolerancies:
+            intolerancies[s] += 1
+
+        for s in tempimpl_families:
+            impl_families[s] += 1
 
         for s in tempsigstats:
             sigalg[s] += 1
@@ -565,6 +635,9 @@ for r,d,flist in os.walk(path):
         eccordering[tempeccordering] += 1
         for s in tempecccurve:
             ecccurve[s] += 1
+
+        for s in tempnpn:
+            npn[s] += 1
 
         if ocsp_stapling is None:
             ocspstaple['Unknown'] += 1
@@ -602,6 +675,12 @@ for r,d,flist in os.walk(path):
             cipherstats['3DES'] += 1
             if ciphertypes == 1:
                 cipherstats['3DES Only'] += 1
+            if 'CBC3' in results['ciphersuite'][0]['cipher']:
+                if 'TLSv1.1' in results['ciphersuite'][0]['protocols'] or\
+                   'TLSv1.2' in results['ciphersuite'][0]['protocols']:
+                        cipherstats['3DES forced in TLS1.1+'] += 1
+                cipherstats['3DES Preferred'] += 1
+
         if CAMELLIA:
             cipherstats['CAMELLIA'] += 1
             if ciphertypes == 1:
@@ -636,6 +715,14 @@ for r,d,flist in os.walk(path):
                     cipherstats['x:' + client_name + ' RC4 Preferred'] += 1
                     for cipher in temp_client_incompat[client_name]:
                         client_RC4_preferred_cipherstats[client_name][cipher] += 1
+                if client_3DES_Only[client_name]:
+                    cipherstats['x:' + client_name + ' 3DES Only'] += 1
+                    for cipher in temp_client_incompat[client_name]:
+                        client_3DES_Only_cipherstats[client_name][cipher] += 1
+                if client_3DES_Pref[client_name]:
+                    cipherstats['x:' + client_name + ' 3DES Preferred'] += 1
+                    for cipher in temp_client_incompat[client_name]:
+                        client_3DES_preferred_cipherstats[client_name][cipher] += 1
             else:
                 cipherstats['x:' + client_name + ' incompatible'] += 1
                 for cipher in temp_client_incompat[client_name]:
@@ -755,6 +842,12 @@ for stat in sorted(handshakestats):
     percent = round(handshakestats[stat] / total * 100, 4)
     sys.stdout.write(stat.ljust(25) + " " + str(handshakestats[stat]).ljust(10) + str(percent).ljust(4) + "\n")
 
+print("\nSupported NPN protocols   Count    Percent ")
+print("-------------------------+---------+--------")
+for name, val in sorted(npn.items()):
+    percent = round(val / total * 100, 4)
+    sys.stdout.write(name.ljust(25) + " " + str(val).ljust(10) + str(percent).ljust(9) + "\n")
+
 print("\nSupported PFS             Count     Percent  PFS Percent")
 print("-------------------------+---------+--------+-----------")
 for stat in sorted(pfsstats):
@@ -861,3 +954,15 @@ print("------------------------")
 fallback_ids_sorted=sorted(fallback_ids.items(), key=operator.itemgetter(1))
 for touple in fallback_ids_sorted:
     print(str(touple[1]+1).rjust(3) + "  " + str(touple[0]))
+
+print("\nClient Hello intolerance                 Count     Percent")
+print("----------------------------------------+---------+-------")
+for stat in natural_sort(intolerancies):
+    percent = round(intolerancies[stat] / total * 100, 4)
+    sys.stdout.write(stat.ljust(40) + " " + str(intolerancies[stat]).ljust(10) + str(percent).ljust(4) + "\n")
+
+print("\nImplementation families                               Count       Percent")
+print("-----------------------------------------------------+-----------+-------")
+for stat in natural_sort(impl_families):
+    percent = round(impl_families[stat] / total * 100, 4)
+    sys.stdout.write(stat.ljust(50) + " " + str(impl_families[stat]).ljust(10) + str(percent).ljust(4) + "\n")

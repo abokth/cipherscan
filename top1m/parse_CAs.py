@@ -19,6 +19,7 @@ import sys
 from collections import defaultdict
 import os
 from OpenSSL import crypto
+from operator import itemgetter
 
 invocations = defaultdict(int)
 
@@ -61,7 +62,8 @@ def get_path_for_hash(cert_hash):
     if not os.path.exists(f_name):
         f_name = ca_certs_path + '/' + cert_hash + '.pem'
         if not os.path.exists(f_name):
-            #print("File with hash " + c_hash + " is missing!")
+            sys.stderr.write("File with hash {0} ({1}) is missing!\n".format(
+                cert_hash, f_name))
             return None
     return f_name
 
@@ -320,12 +322,12 @@ for stat in sorted(effective_security):
 
 print("\nRoot CAs                                      Count     Percent")
 print("---------------------------------------------+---------+-------")
-for stat in sorted(root_CA):
-    percent = round(root_CA[stat] / total * 100, 4)
-    sys.stdout.write(stat.ljust(45)[0:45] + " " + str(root_CA[stat]).ljust(10) + str(percent).ljust(4) + "\n")
+for stat, val in sorted(root_CA.items(), key=itemgetter(1), reverse=True):
+    percent = round(val / total * 100, 4)
+    sys.stdout.write(stat.ljust(45)[0:45] + " " + str(val).ljust(10) + str(percent).ljust(4) + "\n")
 
 print("\nIntermediate CA                               Count     Percent")
 print("---------------------------------------------+---------+-------")
-for stat in sorted(intermediate_CA):
-    percent = round(intermediate_CA[stat] / total * 100, 4)
-    sys.stdout.write(stat.ljust(45)[0:45] + " " + str(intermediate_CA[stat]).ljust(10) + str(percent).ljust(4) + "\n")
+for stat, val in sorted(intermediate_CA.items(), key=itemgetter(1), reverse=True):
+    percent = round(val / total * 100, 4)
+    sys.stdout.write(stat.ljust(45)[0:45] + " " + str(val).ljust(10) + str(percent).ljust(4) + "\n")

@@ -1,6 +1,8 @@
 CipherScan
 ==========
 
+[![Build Status](https://travis-ci.org/mozilla/cipherscan.svg?branch=master)](https://travis-ci.org/mozilla/cipherscan)
+
 ![cipherscan](https://pbs.twimg.com/media/CPbjvCFW8AAnUK3.png:large)
 
 Cipherscan tests the ordering of the SSL/TLS ciphers on a given target, for all major versions of SSL and TLS. It also extracts some certificates informations, TLS options, OCSP stapling and more. Cipherscan is a wrapper above the `openssl s_client` command line.
@@ -175,7 +177,7 @@ wants to reach the modern level, the items that failed under the modern tests
 should be corrected.
 
 `analyze.py` does not make any assumption on what a good level should be. Sites
-operators should now what level they want to match against, based on the
+operators should know what level they want to match against, based on the
 compatibility level they want to support. Again, refer to
 https://wiki.mozilla.org/Security/Server_Side_TLS for more information.
 

@@ -7,10 +7,16 @@
 
 from __future__ import print_function
 
-import sys, os, json, subprocess, logging, argparse, platform, urllib2
+import sys, os, json, subprocess, logging, argparse, platform, re
 from collections import namedtuple
 from datetime import datetime
 from copy import deepcopy
+
+try:
+    from urllib2 import urlopen, URLError
+except ModuleNotFoundError:
+    from urllib.request import urlopen
+    from urllib.error import URLError
 
 def str_compat(data):
     if sys.version_info >= (3,0):
@@ -43,15 +49,21 @@ def has_good_pfs(pfs, target_dh, target_ecc, must_match=False):
 def is_fubar(results):
     logging.debug('entering fubar evaluation')
     lvl = 'fubar'
+
     fubar = False
     has_ssl2 = False
     has_wrong_pubkey = False
+    has_wrong_ec_pubkey = False
     has_bad_sig = False
     has_untrust_cert = False
     has_wrong_pfs = False
+
     for conn in results['ciphersuite']:
         logging.debug('testing connection %s' % conn)
-        if conn['cipher'] not in (set(old["ciphersuites"]) | set(inter["ciphersuites"]) | set(modern["ciphersuites"])):
+        pubkey_bits = int(conn['pubkey'][0])
+        ec_kex = re.match(r"(ECDHE|EECDH|ECDH)-", conn['cipher'])
+
+        if conn['cipher'] not in (set(old["openssl_ciphersuites"]) | set(inter["openssl_ciphersuites"]) | set(modern["openssl_ciphersuites"])):
             failures[lvl].append("remove cipher " + conn['cipher'])
             logging.debug(conn['cipher'] + ' is in the list of fubar ciphers')
             fubar = True
@@ -59,9 +71,13 @@ def is_fubar(results):
             has_ssl2 = True
             logging.debug('SSLv2 is in the list of fubar protocols')
             fubar = True
-        if int(conn['pubkey'][0]) < 2048:
+        if not ec_kex and pubkey_bits < 2048:
             has_wrong_pubkey = True
             logging.debug(conn['pubkey'][0] + ' is a fubar pubkey size')
+            fubar = True
+        if ec_kex and pubkey_bits < 256:
+            has_wrong_ec_pubkey = True
+            logging.debug(conn['pubkey'][0] + ' is a fubar EC pubkey size')
             fubar = True
         if conn['pfs'] != 'None':
             if not has_good_pfs(conn['pfs'], 1024, 160):
@@ -82,6 +98,8 @@ def is_fubar(results):
         failures[lvl].append("don't use a cert with a bad signature algorithm")
     if has_wrong_pubkey:
         failures[lvl].append("don't use a public key smaller than 2048 bits")
+    if has_wrong_ec_pubkey:
+        failures[lvl].append("don't use an EC key smaller than 256 bits")
     if has_untrust_cert:
         failures[lvl].append("don't use an untrusted or self-signed certificate")
     if has_wrong_pfs:
@@ -103,7 +121,7 @@ def is_old(results):
     for conn in results['ciphersuite']:
         logging.debug('testing connection %s' % conn)
         # flag unwanted ciphers
-        if conn['cipher'] not in old["ciphersuites"]:
+        if conn['cipher'] not in old["openssl_ciphersuites"]:
             logging.debug(conn['cipher'] + ' is not in the list of old ciphers')
             failures[lvl].append("remove cipher " + conn['cipher'])
             isold = False
@@ -165,7 +183,7 @@ def is_intermediate(results):
     all_proto = []
     for conn in results['ciphersuite']:
         logging.debug('testing connection %s' % conn)
-        if conn['cipher'] not in inter["ciphersuites"]:
+        if conn['cipher'] not in inter["openssl_ciphersuites"]:
             logging.debug(conn['cipher'] + ' is not in the list of intermediate ciphers')
             failures[lvl].append("remove cipher " + conn['cipher'])
             isinter = False
@@ -205,7 +223,7 @@ def is_intermediate(results):
         failures[lvl].append("use a certificate signed with %s" % " or ".join(inter["certificate_signatures"]))
         isinter = False
     if not has_pfs:
-        failures[lvl].append("consider using DHE of at least %(dh_param_size)d bits and ECC of at least %(ecdh_param_size)d bits" % inter)
+        failures[lvl].append("consider using DHE of at least %(dh_param_size)d bits and ECC %(ecdh_param_size)d bits and greater" % inter)
     if not has_ocsp:
         failures[lvl].append("consider enabling OCSP Stapling")
     if results['serverside'] != 'True':
@@ -224,7 +242,7 @@ def is_modern(results):
     all_proto = []
     for conn in results['ciphersuite']:
         logging.debug('testing connection %s' % conn)
-        if conn['cipher'] not in modern["ciphersuites"]:
+        if conn['cipher'] not in modern["openssl_ciphersuites"]:
             logging.debug(conn['cipher'] + ' is not in the list of modern ciphers')
             failures[lvl].append("remove cipher " + conn['cipher'])
             ismodern = False
@@ -254,7 +272,7 @@ def is_modern(results):
         failures[lvl].append("use a certificate signed with %s" % " or ".join(modern["certificate_signatures"]))
         ismodern = False
     if not has_pfs:
-        failures[lvl].append("use DHE of at least %(dh_param_size)d bits and ECC of at least %(ecdh_param_size)d bits" % modern)
+        failures[lvl].append("use DHE of at least %(dh_param_size)d bits and ECC %(ecdh_param_size)d bits and greater" % modern)
         ismodern = False
     if not has_ocsp:
         failures[lvl].append("consider enabling OCSP Stapling")
@@ -293,17 +311,17 @@ def evaluate_all(results):
 
     if is_old(results):
         status = "old"
-        if not is_ordered(results, old["ciphersuites"], "old"):
+        if not is_ordered(results, old["openssl_ciphersuites"], "old"):
             status = "old with bad ordering"
 
     if is_intermediate(results):
         status = "intermediate"
-        if not is_ordered(results, inter["ciphersuites"], "intermediate"):
+        if not is_ordered(results, inter["openssl_ciphersuites"], "intermediate"):
             status = "intermediate with bad ordering"
 
     if is_modern(results):
         status = "modern"
-        if not is_ordered(results, modern["ciphersuites"], "modern"):
+        if not is_ordered(results, modern["openssl_ciphersuites"], "modern"):
             status = "modern with bad ordering"
 
     if is_fubar(results):
@@ -399,10 +417,10 @@ def build_ciphers_lists():
     sstlsurl = "https://statics.tls.security.mozilla.org/server-side-tls-conf.json"
     conf = dict()
     try:
-        raw = urllib2.urlopen(sstlsurl).read()
+        raw = urlopen(sstlsurl).read()
         conf = json.loads(raw)
         logging.debug('retrieving online server side tls recommendations from %s' % sstlsurl)
-    except urllib2.URLError:
+    except URLError:
         with open('server-side-tls-conf.json', 'r') as f:
             conf = json.load(f)
             logging.debug('Error connecting to %s; using local archive of server side tls recommendations' % sstlsurl)
